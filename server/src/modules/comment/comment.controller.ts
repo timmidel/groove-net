@@ -5,7 +5,6 @@ import {
   Param,
   Post,
   Query,
-  Req,
   UseGuards,
 } from '@nestjs/common';
 import { CommentService } from './comment.service';

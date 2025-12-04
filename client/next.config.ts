@@ -2,9 +2,7 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   images: {
-    domains: [
-      "guybzvdcsaxytioccpmf.supabase.co", // Supabase storage domain
-    ],
+    domains: ["groovenet-media-storage.s3.ap-southeast-2.amazonaws.com"],
   },
 };
 

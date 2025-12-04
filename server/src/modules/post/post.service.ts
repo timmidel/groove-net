@@ -5,13 +5,13 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { Post, Prisma } from '@prisma/client';
-import { SupabaseService } from '../supabase/supabase.service';
+import { AwsService } from '../aws/aws.service';
 
 @Injectable()
 export class PostService {
   constructor(
     private prisma: PrismaService,
-    private supabase: SupabaseService,
+    private aws: AwsService,
   ) {}
 
   private readonly logger = new Logger(PostService.name);
@@ -140,46 +140,23 @@ export class PostService {
     file: Express.Multer.File,
     userId: string,
   ): Promise<string | undefined> {
-    const supabase = this.supabase.getClient();
     const timestamp = Date.now();
     const extension = file.originalname.split('.').pop();
+    const key = `posts/${userId}/audio/${timestamp}.${extension}`;
+
     try {
-      const { error } = await supabase.storage
-        .from('blue-net')
-        .upload(
-          `posts/${userId}/audio/${timestamp}.${extension}`,
-          file.buffer,
-          {
-            contentType: file.mimetype,
-          },
-        );
+      // Upload file to S3
+      await this.aws.uploadFile(process.env.AWS_BUCKET_NAME!, key, file.buffer);
 
-      if (error) {
-        throw new InternalServerErrorException('Failed to upload file', error);
-      }
+      // Construct public URL
+      const publicUrl = `https://${process.env.AWS_BUCKET_NAME}.s3.${process.env.AWS_REGION}.amazonaws.com/${key}`;
 
-      const { data: publicData } = supabase.storage
-        .from('blue-net')
-        .getPublicUrl(`posts/${userId}/audio/${timestamp}.${extension}`);
-      if (!publicData) {
-        throw new InternalServerErrorException('Failed to get public URL');
-      }
-      this.logger.log(`Audio uploaded successfully: ${publicData.publicUrl}`);
-      return publicData.publicUrl;
+      this.logger.log(`Audio uploaded successfully: ${publicUrl}`);
+      return publicUrl;
     } catch (error) {
       this.logger.error('Audio upload failed', error);
+      throw new InternalServerErrorException('Failed to upload file', error);
     }
-  }
-
-  async updatePost(params: {
-    where: Prisma.PostWhereUniqueInput;
-    data: Prisma.PostUpdateInput;
-  }): Promise<Post> {
-    const { where, data } = params;
-    return this.prisma.post.update({
-      data,
-      where,
-    });
   }
 
   async deletePost(where: Prisma.PostWhereUniqueInput): Promise<Post> {

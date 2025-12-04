@@ -4,16 +4,15 @@ import {
   Logger,
 } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
-import { SupabaseService } from '../supabase/supabase.service';
+import { AwsService } from '../aws/aws.service';
 import { User, Prisma } from '@prisma/client';
 import { UserWithCounts } from '../auth/interfaces/user.interface';
-import { Express } from 'express';
 
 @Injectable()
 export class UserService {
   constructor(
     private prisma: PrismaService,
-    private supabase: SupabaseService,
+    private aws: AwsService,
   ) {}
   private readonly logger = new Logger(UserService.name);
 
@@ -91,27 +90,27 @@ export class UserService {
     file: Express.Multer.File,
     userId: string,
   ): Promise<string | undefined> {
-    const supabase = this.supabase.getClient();
+    const key = `avatars/${userId}`;
+
     try {
-      const { error } = await supabase.storage
-        .from('blue-net')
-        .upload(`avatars/${userId}`, file.buffer, {
-          contentType: file.mimetype,
-          upsert: true, // allows overwriting
-        });
+      // Upload to S3 via AWS Service
+      await this.aws.uploadFile(
+        process.env.AWS_BUCKET_NAME!,
+        key,
+        file.buffer,
+        file.mimetype, // ensure proper content type
+      );
 
-      if (error) {
-        throw new InternalServerErrorException('Failed to upload file', error);
-      }
+      // Construct public URL
+      const publicUrl = `https://${process.env.AWS_BUCKET_NAME}.s3.${process.env.AWS_REGION}.amazonaws.com/${key}`;
 
-      const { data: publicData } = supabase.storage
-        .from('blue-net')
-        .getPublicUrl(`avatars/${userId}`);
-      this.logger.log(`Avatar uploaded successfully: ${publicData.publicUrl}`);
-      // Append a cache-busting query parameter to prevent the use of previous image in frontend
-      return `${publicData.publicUrl}?t=${Date.now()}`;
+      this.logger.log(`Avatar uploaded successfully: ${publicUrl}`);
+
+      // Append timestamp to prevent cache issues in frontend
+      return `${publicUrl}?t=${Date.now()}`;
     } catch (error) {
       this.logger.error('Avatar upload failed', error);
+      throw new InternalServerErrorException('Failed to upload avatar', error);
     }
   }
 
